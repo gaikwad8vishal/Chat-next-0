@@ -12,7 +12,8 @@ model User {
   username         String        @unique
   phoneNumber      String?       @unique // Optional phone number for WhatsApp-like auth
   password         String
-  profilePicture   String?
+  profilePicture   String?  
+  
   status           String?       // e.g., "Hey there! I'm using WhatsApp"
   publicKey        String?       // For end-to-end encryption (Signal Protocol)
   lastSeen         DateTime?     // Last online timestamp

@@ -9,7 +9,7 @@ import GroupList from '@/components/inner/group-list';
 import MessageBubble from '@/components/inner/message-bubble';
 import ChatHeader from '@/components/inner/chat-header';
 import { createChatWebSocket, WebSocketMessage } from '@/lib/websocket';
-import { Menu } from 'lucide-react';
+import { Menu, Paperclip, Smile, Send } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -28,13 +28,20 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [username, setUsername] = useState<string | null>(null); // Initialize as null
   const router = useRouter();
-  const username = sessionStorage.getItem('username');
   const wsRef = useRef<ReturnType<typeof createChatWebSocket> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Fetch username from sessionStorage on the client side
+  useEffect(() => {
+    const storedUsername = typeof window !== 'undefined' ? sessionStorage.getItem('username') : null;
+    setUsername(storedUsername);
+  }, []);
+
   // Redirect to sign-in if not authenticated
   useEffect(() => {
+    if (username === null) return; // Wait until username is fetched
     if (!username) {
       router.push('/signin');
     } else {
@@ -181,44 +188,47 @@ export default function ChatPage() {
     }
   };
 
+  if (username === null) return null; // Wait until username is fetched
   if (!username) return null;
 
   return (
-    <div className="flex h-screen bg-background mx-auto max-w-[1280px]">
+    <div className="flex h-screen bg-[#f0f2f5] mx-auto max-w-[1440px] font-sans">
       {/* Sidebar (Hidden on mobile, toggleable) */}
       <div
-        className={`fixed inset-y-0 left-0 z-30 w-72 bg-muted p-4 border-r transform transition-transform duration-300 md:relative md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-30 w-80 bg-[#f0f2f5] p-3 transform transition-transform duration-300 md:relative md:translate-x-0 ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        } md:w-80`}
+        } md:w-[350px] border-r border-gray-200`}
       >
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-foreground">ZapLink</h2>
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-lg font-semibold text-[#111b21]">{username}</h2>
           <Button
             variant="ghost"
             size="icon"
-            className="md:hidden"
+            className="md:hidden text-[#54656f]"
             onClick={() => setIsSidebarOpen(false)}
           >
             <span className="sr-only">Close sidebar</span>
             ✕
           </Button>
         </div>
-        <ContactList
-          onSelectContact={(id) => {
-            setSelectedContact(id);
-            setSelectedGroup(null);
-            setIsSidebarOpen(false);
-          }}
-          selectedContact={selectedContact}
-        />
-        <GroupList
-          onSelectGroup={(id) => {
-            setSelectedGroup(id);
-            setSelectedContact(null);
-            setIsSidebarOpen(false);
-          }}
-          selectedGroup={selectedGroup}
-        />
+        <div className="space-y-2">
+          <ContactList
+            onSelectContact={(id) => {
+              setSelectedContact(id);
+              setSelectedGroup(null);
+              setIsSidebarOpen(false);
+            }}
+            selectedContact={selectedContact}
+          />
+          <GroupList
+            onSelectGroup={(id) => {
+              setSelectedGroup(id);
+              setSelectedContact(null);
+              setIsSidebarOpen(false);
+            }}
+            selectedGroup={selectedGroup}
+          />
+        </div>
       </div>
 
       {/* Mobile Sidebar Toggle */}
@@ -227,7 +237,7 @@ export default function ChatPage() {
         size="icon"
         className={`fixed top-4 left-4 z-40 md:hidden ${
           isSidebarOpen ? 'hidden' : 'block'
-        }`}
+        } text-[#54656f]`}
         onClick={() => setIsSidebarOpen(true)}
       >
         <Menu className="h-6 w-6" />
@@ -235,7 +245,7 @@ export default function ChatPage() {
       </Button>
 
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col bg-[url('/whatsapp-bg.png')] bg-repeat md:bg-gray-100">
+      <div className="flex-1 flex flex-col bg-[#e5ddd5] bg-[url('/whatsapp-bg.png')] bg-repeat">
         <ChatHeader
           contactId={selectedContact}
           groupId={selectedGroup}
@@ -243,12 +253,12 @@ export default function ChatPage() {
         />
         <div className="flex-1 overflow-y-auto p-2 sm:p-4">
           {error && (
-            <p className="text-red-500 text-sm text-center bg-red-50 p-3 rounded-md">
+            <p className="text-red-500 text-sm text-center bg-red-50 p-2 rounded-md">
               {error}
             </p>
           )}
           {isLoading ? (
-            <p className="text-center text-muted-foreground">Loading messages...</p>
+            <p className="text-center text-[#54656f] text-sm">Loading messages...</p>
           ) : selectedContact || selectedGroup ? (
             <>
               {messages.map((message) => (
@@ -265,14 +275,14 @@ export default function ChatPage() {
                 />
               ))}
               {typingUsers.size > 0 && (
-                <p className="text-sm text-muted-foreground italic p-2">
+                <p className="text-xs text-[#54656f] italic p-2">
                   {[...typingUsers].join(', ')} {typingUsers.size > 1 ? 'are' : 'is'} typing...
                 </p>
               )}
               <div ref={messagesEndRef} />
             </>
           ) : (
-            <p className="text-center text-muted-foreground mt-10">
+            <p className="text-center text-[#54656f] mt-10 text-sm">
               Select a contact or group to start chatting
             </p>
           )}
@@ -280,21 +290,42 @@ export default function ChatPage() {
         {(selectedContact || selectedGroup) && (
           <form
             onSubmit={handleSendMessage}
-            className="p-2 sm:p-4 border-t bg-background flex items-center gap-2"
+            className="p-2 sm:p-3 bg-[#f0f2f5] flex items-center gap-2"
           >
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-[#54656f]"
+              onClick={() => alert('Attachment feature coming soon!')}
+            >
+              <Paperclip className="h-5 w-5" />
+              <span className="sr-only">Attach file</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-[#54656f]"
+              onClick={() => alert('Emoji picker coming soon!')}
+            >
+              <Smile className="h-5 w-5" />
+              <span className="sr-only">Add emoji</span>
+            </Button>
             <Input
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a message..."
+              placeholder="Type a message"
               disabled={isLoading}
-              className="flex-1 rounded-full border border-input bg-white p-2 sm:p-3 text-foreground text-sm sm:text-base focus:border-blue-600 focus:outline-none"
+              className="flex-1 rounded-full border-none bg-white p-2 sm:p-3 text-[#111b21] text-sm sm:text-sm focus:ring-0 focus:outline-none shadow-sm"
             />
             <Button
               type="submit"
-              className="rounded-full bg-blue-600 hover:bg-blue-700 transition-colors duration-200 px-4 sm:px-6"
+              variant="ghost"
+              size="icon"
+              className="text-[#075e54] hover:bg-gray-200"
               disabled={isLoading || !newMessage.trim()}
             >
-              Send
+              <Send className="h-5 w-5" />
+              <span className="sr-only">Send message</span>
             </Button>
           </form>
         )}
