@@ -1,0 +1,112 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id               String        @id @default(uuid())
+  username         String        @unique
+  phoneNumber      String?       @unique // Optional phone number for WhatsApp-like auth
+  password         String
+  profilePicture   String?
+  status           String?       // e.g., "Hey there! I'm using WhatsApp"
+  publicKey        String?       // For end-to-end encryption (Signal Protocol)
+  lastSeen         DateTime?     // Last online timestamp
+  sessions         Session[]
+  sentMessages     Message[]     @relation("SentMessages")
+  receivedMessages Message[]     @relation("ReceivedMessages")
+  groups           GroupMember[]
+  createdGroups    Group[]       @relation("GroupCreator") // Relation for groups created by this user
+  callsInitiated   Call[]        @relation("Initiator")
+  callsReceived    Call[]        @relation("Receiver")
+  messageStatuses  MessageStatus[]
+  @@index([username])
+  @@index([phoneNumber])
+}
+
+model Session {
+  sessionId String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  expiresAt DateTime? // Session expiration
+  @@index([sessionId])
+}
+
+model Message {
+  id          String         @id @default(uuid())
+  type        String         // "single" or "group"
+  senderId    String
+  sender      User           @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String?
+  recipient   User?          @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: SetNull)
+  groupId     String?
+  group       Group?         @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  content     String         // Text or encrypted content
+  mediaType   String?        // e.g., "image", "video", "document", "voice"
+  mediaUrl    String?        // URL to media file (e.g., S3)
+  timestamp   DateTime       @default(now())
+  statuses    MessageStatus[] // Sent, delivered, read statuses
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([groupId])
+  @@index([timestamp])
+}
+
+model MessageStatus {
+  messageId String
+  userId    String
+  message   Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    String    // "sent", "delivered", "read"
+  updatedAt DateTime  @default(now())
+  @@id([messageId, userId])
+  @@index([messageId])
+  @@index([userId])
+}
+
+model Group {
+  id          String        @id @default(uuid())
+  name        String
+  description String?       // Group description
+  createdBy   String        // Creator user ID
+  creator     User          @relation("GroupCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  members     GroupMember[]
+  messages    Message[]
+  calls       Call[]
+  createdAt   DateTime      @default(now())
+  @@index([createdBy])
+}
+
+model GroupMember {
+  groupId   String
+  userId    String
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String    // "admin" or "member"
+  joinedAt  DateTime  @default(now())
+  @@id([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+model Call {
+  id          String    @id @default(uuid())
+  initiatorId String
+  initiator   User      @relation("Initiator", fields: [initiatorId], references: [id], onDelete: Cascade)
+  receiverId  String?
+  receiver    User?     @relation("Receiver", fields: [receiverId], references: [id], onDelete: SetNull)
+  groupId     String?   // For group calls
+  group       Group?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  type        String    // "voice" or "video"
+  status      String    // "initiated", "accepted", "ended"
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  @@index([initiatorId])
+  @@index([receiverId])
+  @@index([groupId])
+}
