@@ -35,7 +35,7 @@ export default function ChatPage() {
 
   // Fetch username from sessionStorage on the client side
   useEffect(() => {
-    const storedUsername = typeof window !== 'undefined' ? sessionStorage.getItem('username') : null;
+    const storedUsername = typeof window !== 'undefined' ? sessionStorage.getItem('username') : "vishal@12345";
     setUsername(storedUsername);
   }, []);
 

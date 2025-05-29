@@ -1,15 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
-
-// Define interface for API response
-interface SignupResponse {
-  message: string;
-}
+import { useSession } from 'next-auth/react';
 
 export default function Signup() {
   const [username, setUsername] = useState('');
@@ -20,6 +16,13 @@ export default function Signup() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const { status } = useSession();
+
+  useEffect(() => {
+    if (status === 'authenticated') {
+      router.push('/chat');
+    }
+  }, [status, router]);
 
   const handleProfilePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -34,14 +37,24 @@ export default function Signup() {
     setError('');
     setIsLoading(true);
 
-    // Validate password match
+    if (username.length < 3) {
+      setError('Username must be at least 3 characters long');
+      setIsLoading(false);
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      setIsLoading(false);
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       setIsLoading(false);
       return;
     }
 
-    // Validate terms and conditions
     if (!agreeTerms) {
       setError('You must agree to the Terms and Conditions');
       setIsLoading(false);
@@ -51,68 +64,71 @@ export default function Signup() {
     try {
       let profilePictureBase64: string | null = null;
 
-      // Convert profile picture to base64 if provided
       if (profilePicture) {
-        const arrayBuffer = await profilePicture.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
         const fileType = profilePicture.type;
-        const base64String = buffer.toString('base64');
-
-        // Validate file type
         const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+        const maxSize = 5 * 1024 * 1024;
+
         if (!allowedTypes.includes(fileType)) {
           setError('Only JPEG, PNG, and GIF images are allowed');
           setIsLoading(false);
           return;
         }
 
-        // Validate file size (max 5MB)
-        const maxSize = 5 * 1024 * 1024; // 5MB in bytes
         if (profilePicture.size > maxSize) {
           setError('Profile picture must be less than 5MB');
           setIsLoading(false);
           return;
         }
 
-        profilePictureBase64 = `data:${fileType};base64,${base64String}`;
+        try {
+          const arrayBuffer = await profilePicture.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          profilePictureBase64 = `data:${fileType};base64,${buffer.toString('base64')}`;
+        } catch (err) {
+          setError('Failed to process profile picture. Please try again.');
+          setIsLoading(false);
+          return;
+        }
       }
 
-      // Send signup request
+      console.log('Sending signup request:', { username, profilePicture: !!profilePictureBase64 });
       const response = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, profilePicture: profilePictureBase64 }),
+        body: JSON.stringify({ username: username.toLowerCase(), password, profilePicture: profilePictureBase64 }),
       });
 
-      const data: SignupResponse = await response.json();
+      let data;
+      try {
+        // Check if response has a valid JSON body
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          data = await response.json();
+        } else {
+          throw new Error('Response is not JSON');
+        }
+      } catch (jsonError) {
+        console.error('JSON parse error:', jsonError);
+        throw new Error('Invalid server response. Please try again.');
+      }
+
+      console.log('Signup response:', { status: response.status, data });
 
       if (response.ok) {
         router.push('/signin');
       } else {
-        switch (data.message) {
-          case 'Username already exists':
-            setError('This username is already taken');
-            break;
-          case 'Invalid profile picture format. Must be a base64-encoded image':
-            setError('Invalid profile picture format');
-            break;
-          case 'Profile picture must be less than 5MB':
-            setError('Profile picture is too large (max 5MB)');
-            break;
-          case 'Database connection error. Please try again later.':
-            setError('Unable to connect to the server. Please try again later.');
-            break;
-          default:
-            setError(data.message || 'Signup failed. Please try again.');
-        }
+        setError(data.message || 'Signup failed. Please try again.');
+        setIsLoading(false);
       }
     } catch (err: unknown) {
       console.error('Signup error:', {
-        error: err instanceof Error ? err.message : 'Unknown error',
+        error: err,
+        message: err instanceof Error ? err.message : 'Unknown error',
         stack: err instanceof Error ? err.stack : undefined,
+        response: err instanceof Response ? { status: err.status, text: await err.text().catch(() => 'Unable to read response') } : undefined,
       });
-      setError('Failed to signup. Please try again.');
-    } finally {
+      setError(err instanceof Error ? err.message : 'Network or server error. Please try again later.');
       setIsLoading(false);
     }
   };
@@ -121,7 +137,9 @@ export default function Signup() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold text-foreground text-center">Sign Up to ZapLink</h1>
       {error && (
-        <p className="text-red-500 text-sm text-center bg-red-50 p-3 rounded-md">{error}</p>
+        <p id="error-message" className="text-red-500 text-sm text-center bg-red-50 p-3 rounded-md" aria-live="assertive">
+          {error}
+        </p>
       )}
       <form onSubmit={handleSignup} className="space-y-4">
         <div>
@@ -137,6 +155,7 @@ export default function Signup() {
             required
             disabled={isLoading}
             className="mt-1 w-full rounded-md border border-input bg-background p-2 text-foreground focus:border-blue-600 focus:outline-none"
+            aria-describedby={error ? 'error-message' : undefined}
           />
         </div>
         <div>
@@ -152,6 +171,7 @@ export default function Signup() {
             required
             disabled={isLoading}
             className="mt-1 w-full rounded-md border border-input bg-background p-2 text-foreground focus:border-blue-600 focus:outline-none"
+            aria-describedby={error ? 'error-message' : undefined}
           />
         </div>
         <div>
@@ -167,6 +187,7 @@ export default function Signup() {
             required
             disabled={isLoading}
             className="mt-1 w-full rounded-md border border-input bg-background p-2 text-foreground focus:border-blue-600 focus:outline-none"
+            aria-describedby={error ? 'error-message' : undefined}
           />
         </div>
         <div>
@@ -180,6 +201,7 @@ export default function Signup() {
             onChange={handleProfilePictureChange}
             disabled={isLoading}
             className="mt-1 w-full text-foreground"
+            aria-describedby={error ? 'error-message' : undefined}
           />
         </div>
         <div className="flex items-center gap-2">

@@ -2,15 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { signIn, useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
-
-// Define interface for API response
-interface SigninResponse {
-  message: string;
-  user?: { id: string; username: string };
-}
 
 export default function SignIn() {
   const [username, setUsername] = useState<string>('');
@@ -19,14 +14,14 @@ export default function SignIn() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const router = useRouter();
+  const { data: session, status } = useSession();
 
   // Redirect if already signed in
   useEffect(() => {
-    const storedUsername = sessionStorage.getItem('username');
-    if (storedUsername) {
-      router.push('/signin');
+    if (status === 'authenticated') {
+      router.push('/chat');
     }
-  }, [router]);
+  }, [status, router]);
 
   const handleSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -41,37 +36,41 @@ export default function SignIn() {
     }
 
     try {
-      const response = await fetch('/api/auth/signin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+      console.log('Attempting sign-in:', { username }); // Debug log
+      const result = await signIn('credentials', {
+        redirect: false,
+        username: username.toLowerCase(), // Match server-side toLowerCase
+        password,
       });
 
-      const data: SigninResponse = await response.json();
+      console.log('Sign-in result:', result); // Debug log
 
-      if (response.ok) {
-        // Store username in sessionStorage (temporary; consider NextAuth.js for production)
-        sessionStorage.setItem('username', username);
-        router.push('/chat'); // Redirect to dashboard
-      } else {
-        switch (data.message) {
-          case 'Invalid username or password':
+      if (result?.error) {
+        switch (result.error) {
+          case 'CredentialsSignin':
             setError('Invalid username or password');
             break;
-          case 'Database connection error. Please try again later.':
-            setError('Unable to connect to the server. Please try again later.');
+          case 'Configuration':
+            setError('Authentication configuration error. Please contact support.');
             break;
           default:
-            setError(data.message || 'Sign-in failed. Please try again.');
+            setError(result.error || 'Sign-in failed. Please try again.');
         }
+        setIsLoading(false);
+      } else if (result?.ok) {
+        // Wait for session to update, handled by useEffect
+        setIsLoading(false);
+      } else {
+        setError('Unexpected sign-in response. Please try again.');
         setIsLoading(false);
       }
     } catch (err: unknown) {
       console.error('Sign-in error:', {
-        error: err instanceof Error ? err.message : 'Unknown error',
+        error: err,
+        message: err instanceof Error ? err.message : 'Unknown error',
         stack: err instanceof Error ? err.stack : undefined,
       });
-      setError('Network error. Please try again later.');
+      setError('Network or server error. Please try again later.');
       setIsLoading(false);
     }
   };
@@ -138,7 +137,7 @@ export default function SignIn() {
       </form>
       <div className="text-center text-sm space-y-2">
         <p>
-          Don&apos;t have an account?{' '}
+          Don't have an account?{' '}
           <Link href="/signup" className="text-blue-600 hover:underline">
             Sign Up
           </Link>
