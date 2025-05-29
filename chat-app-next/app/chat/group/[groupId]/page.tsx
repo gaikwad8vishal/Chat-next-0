@@ -11,7 +11,7 @@ export async function GET() {
       );
     }
 
-    // Mock group data (replace with Prisma query in production)
+
     const groups = [
       { id: 'group1', name: 'Family Group' },
       { id: 'group2', name: 'Work Team' },
