@@ -9,7 +9,7 @@ import GroupList from '@/components/inner/group-list';
 import MessageBubble from '@/components/inner/message-bubble';
 import ChatHeader from '@/components/inner/chat-header';
 import { createChatWebSocket, WebSocketMessage } from '@/lib/websocket';
-import { Menu, Paperclip, Smile, Send, LogOut } from 'lucide-react';
+import { Menu, Paperclip, Smile, Send } from 'lucide-react';
 import axios from 'axios';
 
 interface Message {
@@ -206,13 +206,6 @@ export default function ChatPage() {
     }
   };
 
-  // Logout handler
-  const handleLogout = () => {
-    sessionStorage.removeItem('username');
-    wsRef.current?.disconnect();
-    router.push('/signin');
-  };
-
   if (username === null) return null;
   if (!username) return null;
 
@@ -224,18 +217,8 @@ export default function ChatPage() {
         } md:w-[350px] border-r border-gray-200`}
       >
         <div className="flex justify-between items-center mb-3">
-          <h2 className="text-lg font-semibold text-[#111b21]">{username}</h2>
+          <h2 className="text-3xl font-semibold text-[#111b21]">Chats</h2>
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-[#54656f] hover:bg-gray-200"
-              onClick={handleLogout}
-              title="Log out"
-            >
-              <LogOut className="h-5 w-5" />
-              <span className="sr-only">Log out</span>
-            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -310,7 +293,7 @@ export default function ChatPage() {
               ))}
               {typingUsers.size > 0 && (
                 <p className="text-xs text-[#54656f] italic p-2">
-                  {[...typingUsers].join(', ')} {typingUsers.size > 1 ? 'are' : 'is'} typing...
+                  {[...typingUsers].join(', ') } {typingUsers.size > 1 ? 'are' : 'is'} typing...
                 </p>
               )}
               <div ref={messagesEndRef} />

@@ -7,50 +7,98 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum MessageType {
+  SINGLE
+  GROUP
+}
+
+enum MessageStatusType {
+  SENT
+  DELIVERED
+  READ
+}
+
+enum GroupMemberRole {
+  ADMIN
+  MEMBER
+}
+
+enum CallType {
+  VOICE
+  VIDEO
+}
+
+enum CallStatus {
+  INITIATED
+  ACCEPTED
+  ENDED
+}
+
 model User {
-  id               String        @id @default(uuid())
-  username         String        @unique
-  phoneNumber      String?       @unique // Optional phone number for WhatsApp-like auth
-  password         String
-  profilePicture   String?  
-  status           String?       // e.g., "Hey there! I'm using WhatsApp"
-  publicKey        String?       // For end-to-end encryption (Signal Protocol)
-  lastSeen         DateTime?     // Last online timestamp
+  id               String           @id @default(uuid())
+  username         String           @unique
+  phoneNumber      String?          @unique
+  password         String           // Hash this in backend
+  profilePicture   String?
+  about            String?
+  publicKey        String?
+  lastSeen         DateTime?
   sessions         Session[]
-  sentMessages     Message[]     @relation("SentMessages")
-  receivedMessages Message[]     @relation("ReceivedMessages")
+  messagesSent     Message[]        @relation("MessagesSent")
+  messagesReceived Message[]        @relation("MessagesReceived")
   groups           GroupMember[]
-  createdGroups    Group[]       @relation("GroupCreator") // Relation for groups created by this user
-  callsInitiated   Call[]        @relation("Initiator")
-  callsReceived    Call[]        @relation("Receiver")
+  createdGroups    Group[]          @relation("GroupCreator")
+  callsInitiated   Call[]           @relation("CallsInitiated")
+  callsReceived    Call[]           @relation("CallsReceived")
   messageStatuses  MessageStatus[]
+  contacts         Contact[]        @relation("UserContacts")
+  contactOf        Contact[]        @relation("ContactOfUsers")
+
   @@index([username])
   @@index([phoneNumber])
 }
 
 model Session {
-  sessionId String    @id @default(uuid())
+  sessionId String   @id @default(uuid())
   userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime  @default(now())
-  expiresAt DateTime? // Session expiration
-  @@index([sessionId])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+
+  @@index([userId])
+}
+
+model Contact {
+  userId    String
+  contactId String
+  user      User     @relation("UserContacts", fields: [userId], references: [id])
+  contact   User     @relation("ContactOfUsers", fields: [contactId], references: [id])
+  isBlocked Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@id([userId, contactId])
+  @@index([userId])
+  @@index([contactId])
 }
 
 model Message {
   id          String         @id @default(uuid())
-  type        String         // "single" or "group"
+  type        MessageType
   senderId    String
-  sender      User           @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  sender      User           @relation("MessagesSent", fields: [senderId], references: [id], onDelete: Cascade)
   recipientId String?
-  recipient   User?          @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: SetNull)
+  recipient   User?          @relation("MessagesReceived", fields: [recipientId], references: [id], onDelete: SetNull)
   groupId     String?
   group       Group?         @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  content     String         // Text or encrypted content
-  mediaType   String?        // e.g., "image", "video", "document", "voice"
-  mediaUrl    String?        // URL to media file (e.g., S3)
+  content     String
+  mediaType   String?
+  mediaUrl    String?
+  mediaSize   Int?
+  thumbnail   String?
   timestamp   DateTime       @default(now())
-  statuses    MessageStatus[] // Sent, delivered, read statuses
+  statuses    MessageStatus[]
+  deletedAt   DateTime?
+
   @@index([senderId])
   @@index([recipientId])
   @@index([groupId])
@@ -60,10 +108,11 @@ model Message {
 model MessageStatus {
   messageId String
   userId    String
-  message   Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status    String    // "sent", "delivered", "read"
-  updatedAt DateTime  @default(now())
+  message   Message         @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    MessageStatusType
+  updatedAt DateTime        @default(now())
+
   @@id([messageId, userId])
   @@index([messageId])
   @@index([userId])
@@ -72,40 +121,44 @@ model MessageStatus {
 model Group {
   id          String        @id @default(uuid())
   name        String
-  description String?       // Group description
-  createdBy   String        // Creator user ID
+  description String?
+  createdBy   String
   creator     User          @relation("GroupCreator", fields: [createdBy], references: [id], onDelete: Cascade)
   members     GroupMember[]
   messages    Message[]
   calls       Call[]
   createdAt   DateTime      @default(now())
+
   @@index([createdBy])
 }
 
 model GroupMember {
-  groupId   String
-  userId    String
-  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role      String    // "admin" or "member"
-  joinedAt  DateTime  @default(now())
+  groupId  String
+  userId   String
+  group    Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     GroupMemberRole
+  joinedAt DateTime       @default(now())
+
   @@id([groupId, userId])
   @@index([groupId])
   @@index([userId])
 }
 
 model Call {
-  id          String    @id @default(uuid())
+  id          String      @id @default(uuid())
   initiatorId String
-  initiator   User      @relation("Initiator", fields: [initiatorId], references: [id], onDelete: Cascade)
+  initiator   User        @relation("CallsInitiated", fields: [initiatorId], references: [id], onDelete: Cascade)
   receiverId  String?
-  receiver    User?     @relation("Receiver", fields: [receiverId], references: [id], onDelete: SetNull)
-  groupId     String?   // For group calls
-  group       Group?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  type        String    // "voice" or "video"
-  status      String    // "initiated", "accepted", "ended"
-  startedAt   DateTime  @default(now())
+  receiver    User?       @relation("CallsReceived", fields: [receiverId], references: [id], onDelete: SetNull)
+  groupId     String?
+  group       Group?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  type        CallType
+  status      CallStatus
+  startedAt   DateTime    @default(now())
   endedAt     DateTime?
+  durationInSec Int?
+
   @@index([initiatorId])
   @@index([receiverId])
   @@index([groupId])

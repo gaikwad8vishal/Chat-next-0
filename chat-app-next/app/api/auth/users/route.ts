@@ -1,55 +1,71 @@
 import { NextResponse } from 'next/server';
-import prisma from '../../../../lib/prisma';
+import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
-import { getServerSession } from 'next-auth'; // Import NextAuth.js session handler
+import { getServerSession } from 'next-auth';
+import { authOptions } from '../[...nextauth]/route';
 
 export async function GET() {
   try {
-    // Fetch the logged-in user's session using NextAuth.js
-    const session = await getServerSession();
-    if (!session || !session.user?.id) {
+    // Fetch the logged-in user's session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
       return NextResponse.json(
-        { message: 'User not authenticated' },
+        { message: 'Unauthorized: No valid session found' },
         { status: 401 }
       );
     }
 
     const loggedInUserId = session.user.id;
 
-    // Fetch all users except the logged-in user
-    const users = await prisma.user.findMany({
-      where: {
-        id: { not: loggedInUserId },
-      },
+    // Fetch the logged-in user's contacts
+    const userWithContacts = await prisma.user.findUnique({
+      where: { id: loggedInUserId },
       select: {
-        id: true,
-        username: true,
-        profilePicture: true,
-        messagesSent: {
-          where: { recipientId: loggedInUserId },
-          take: 1,
-          orderBy: { createdAt: 'desc' },
-          select: { content: true, createdAt: true, senderId: true },
-        },
-        messagesReceived: {
-          where: { senderId: loggedInUserId },
-          take: 1,
-          orderBy: { createdAt: 'desc' },
-          select: { content: true, createdAt: true, senderId: true },
-        },
-        _count: {
+        contacts: {
           select: {
+            id: true,
+            username: true,
+            profilePicture: true,
+            messagesSent: {
+              where: { recipientId: loggedInUserId },
+              take: 1,
+              orderBy: { createdAt: 'desc' },
+              select: { id: true, content: true, createdAt: true },
+            },
             messagesReceived: {
-              where: { senderId: loggedInUserId, read: false },
+              where: { senderId: loggedInUserId },
+              take: 1,
+              orderBy: { createdAt: 'desc' },
+              select: { id: true, content: true, createdAt: true },
+            },
+            _count: {
+              select: {
+                messagesReceived: {
+                  where: { senderId: loggedInUserId, read: false },
+                },
+              },
             },
           },
         },
       },
     });
 
-    // Process users to format the response
-    const contacts = users.map((user) => {
-      // Determine the last message (most recent between sent and received)
+    // Handle case where user or contacts are not found
+    if (!userWithContacts) {
+      return NextResponse.json(
+        { message: 'User not found' },
+        { status: 404 }
+      );
+    }
+    if (!userWithContacts.contacts || userWithContacts.contacts.length === 0) {
+      return NextResponse.json(
+        { message: 'No contacts available. Add friends to start chatting!' },
+        { status: 200 }
+      );
+    }
+
+    // Process contacts
+    const contacts = userWithContacts.contacts.map((user) => {
       const sentMessage = user.messagesSent[0];
       const receivedMessage = user.messagesReceived[0];
       let lastMessage = null;
@@ -76,7 +92,6 @@ export async function GET() {
         lastMessageSentByUser = false;
       }
 
-      // Format the timestamp (e.g., "Yesterday", "14:30")
       let formattedTime = null;
       if (lastMessageTime) {
         const date = new Date(lastMessageTime);
@@ -99,18 +114,13 @@ export async function GET() {
         }
       }
 
-      // Convert profilePicture Buffer to base64 string
-      const avatarUrl = user.profilePicture
-        ? `data:image/jpeg;base64,${Buffer.from(user.profilePicture).toString('base64')}`
-        : null;
-
       return {
         id: user.id,
         username: user.username,
-        avatarUrl,
+        avatarUrl: user.profilePicture || '/default-avatar.jpg',
         lastMessage,
         lastMessageTime: formattedTime,
-        isOnline: false, // Implement via WebSocket (e.g., presence system)
+        isOnline: false, // Could be enhanced with WebSocket
         unreadCount: user._count.messagesReceived,
         lastMessageSentByUser,
       };
@@ -118,28 +128,36 @@ export async function GET() {
 
     return NextResponse.json(contacts, { status: 200 });
   } catch (error: unknown) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P1001'
-    ) {
-      return NextResponse.json(
-        { message: 'Database connection error. Please try again later.' },
-        { status: 503 }
-      );
+    const errorDetails = {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      name: error instanceof Error ? error.name : 'N/A',
+      stack: error instanceof Error ? error.stack : undefined,
+      code: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : 'N/A',
+    };
+    console.error('Fetch contacts error:', errorDetails);
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P1001') {
+        return NextResponse.json(
+          { message: 'Database connection error. Please try again later.' },
+          { status: 503 }
+        );
+      }
+      if (error.code === 'P2025') {
+        return NextResponse.json(
+          { message: 'User or contacts not found' },
+          { status: 404 }
+        );
+      }
     } else if (error instanceof Prisma.PrismaClientInitializationError) {
       return NextResponse.json(
-        { message: 'Database initialization error. Please try again later.' },
+        { message: 'Database initialization error. Please contact support.' },
         { status: 500 }
       );
     }
 
-    console.error('Fetch users error:', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-    });
-
     return NextResponse.json(
-      { message: 'Internal server error' },
+      { message: 'Server error fetching contacts', details: errorDetails },
       { status: 500 }
     );
   }
