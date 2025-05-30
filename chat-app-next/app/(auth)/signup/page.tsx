@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
-import { useSession } from 'next-auth/react';
+import { useSession, signIn } from 'next-auth/react';
 
 export default function Signup() {
   const [username, setUsername] = useState('');
@@ -20,9 +20,14 @@ export default function Signup() {
 
   useEffect(() => {
     if (status === 'authenticated') {
+      // Store username in sessionStorage when authenticated
+      const storedUsername = sessionStorage.getItem('username') || username;
+      if (storedUsername) {
+        sessionStorage.setItem('username', storedUsername);
+      }
       router.push('/chat');
     }
-  }, [status, router]);
+  }, [status, router, username]);
 
   const handleProfilePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -101,12 +106,13 @@ export default function Signup() {
 
       let data;
       try {
-        // Check if response has a valid JSON body
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
           data = await response.json();
         } else {
-          throw new Error('Response is not JSON');
+          const text = await response.text();
+          console.error('Non-JSON response:', text.slice(0, 100)); // Log first 100 chars
+          throw new Error('Server returned non-JSON response');
         }
       } catch (jsonError) {
         console.error('JSON parse error:', jsonError);
@@ -116,7 +122,24 @@ export default function Signup() {
       console.log('Signup response:', { status: response.status, data });
 
       if (response.ok) {
-        router.push('/signin');
+        // Automatically sign in after successful signup
+        const signInResult = await signIn('credentials', {
+          redirect: false,
+          username: username.toLowerCase(),
+          password,
+        });
+
+        if (signInResult?.error) {
+          setError('Signup succeeded, but auto sign-in failed. Please sign in manually.');
+          router.push('/signin');
+        } else if (signInResult?.ok) {
+          // Store username in sessionStorage
+          sessionStorage.setItem('username', username.toLowerCase());
+          // useEffect will handle redirect to /chat after session updates
+        } else {
+          setError('Unexpected sign-in response after signup. Please sign in manually.');
+          router.push('/signin');
+        }
       } else {
         setError(data.message || 'Signup failed. Please try again.');
         setIsLoading(false);

@@ -9,7 +9,8 @@ import GroupList from '@/components/inner/group-list';
 import MessageBubble from '@/components/inner/message-bubble';
 import ChatHeader from '@/components/inner/chat-header';
 import { createChatWebSocket, WebSocketMessage } from '@/lib/websocket';
-import { Menu, Paperclip, Smile, Send } from 'lucide-react';
+import { Menu, Paperclip, Smile, Send, LogOut } from 'lucide-react';
+import axios from 'axios';
 
 interface Message {
   id: string;
@@ -28,20 +29,20 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [username, setUsername] = useState<string | null>(null); // Initialize as null
+  const [username, setUsername] = useState<string | null>(null);
   const router = useRouter();
   const wsRef = useRef<ReturnType<typeof createChatWebSocket> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch username from sessionStorage on the client side
   useEffect(() => {
-    const storedUsername = typeof window !== 'undefined' ? sessionStorage.getItem('username') : "vishal@12345";
+    const storedUsername = typeof window !== 'undefined' ? sessionStorage.getItem('username') : null;
     setUsername(storedUsername);
   }, []);
 
   // Redirect to sign-in if not authenticated
   useEffect(() => {
-    if (username === null) return; // Wait until username is fetched
+    if (username === null) return;
     if (!username) {
       router.push('/signin');
     } else {
@@ -63,15 +64,27 @@ export default function ChatPage() {
         const endpoint = selectedContact
           ? `/api/messages?userId=${selectedContact}`
           : `/api/messages?groupId=${selectedGroup}`;
-        const response = await fetch(endpoint);
-        const data = await response.json();
-        if (response.ok) {
-          setMessages(data.map((msg: any) => ({ ...msg, status: 'delivered' })));
+        const response = await axios.get(endpoint, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (response.status === 200) {
+          setMessages(response.data.map((msg: any) => ({ ...msg, status: 'delivered' })));
         } else {
-          setError(data.message || 'Failed to fetch messages');
+          setError(response.data.message || 'Failed to fetch messages');
         }
-      } catch (err) {
-        setError('Network error. Please try again later.');
+      } catch (err: any) {
+        console.error('Fetch messages error:', {
+          message: err.message,
+          status: err.response?.status,
+          statusText: err.response?.statusText,
+          data: err.response?.data ? err.response.data : 'No response data',
+          responseText: err.response?.data ? String(err.response.data).slice(0, 200) : 'No response body',
+        });
+        setError(
+          err.response?.data?.message ||
+            'Network error or invalid response from server. Please try again later.'
+        );
       } finally {
         setIsLoading(false);
       }
@@ -152,22 +165,18 @@ export default function ChatPage() {
     };
 
     try {
-      // Send via WebSocket
       wsRef.current?.sendMessage(messageData);
 
-      // Save to database
-      const response = await fetch('/api/messages', {
-        method: 'POST',
+      const response = await axios.post('/api/messages', {
+        content: newMessage,
+        senderId: username,
+        recipientId: selectedContact,
+        groupId: selectedGroup,
+      }, {
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: newMessage,
-          senderId: username,
-          recipientId: selectedContact,
-          groupId: selectedGroup,
-        }),
       });
 
-      if (response.ok) {
+      if (response.status === 200) {
         setMessages((prev) => [
           ...prev,
           {
@@ -180,20 +189,35 @@ export default function ChatPage() {
         ]);
         setNewMessage('');
       } else {
-        const data = await response.json();
-        setError(data.message || 'Failed to send message');
+        setError(response.data.message || 'Failed to send message');
       }
-    } catch (err) {
-      setError('Network error. Please try again later.');
+    } catch (err: any) {
+      console.error('Send message error:', {
+        message: err.message,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data ? err.response.data : 'No response data',
+        responseText: err.response?.data ? String(err.response.data).slice(0, 200) : 'No response body',
+      });
+      setError(
+        err.response?.data?.message ||
+          'Network error or invalid response from server. Please try again later.'
+      );
     }
   };
 
-  if (username === null) return null; // Wait until username is fetched
+  // Logout handler
+  const handleLogout = () => {
+    sessionStorage.removeItem('username');
+    wsRef.current?.disconnect();
+    router.push('/signin');
+  };
+
+  if (username === null) return null;
   if (!username) return null;
 
   return (
     <div className="flex h-screen bg-[#f0f2f5] mx-auto max-w-[1440px] font-sans">
-      {/* Sidebar (Hidden on mobile, toggleable) */}
       <div
         className={`fixed inset-y-0 left-0 z-30 w-80 bg-[#f0f2f5] p-3 transform transition-transform duration-300 md:relative md:translate-x-0 ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -201,15 +225,27 @@ export default function ChatPage() {
       >
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold text-[#111b21]">{username}</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden text-[#54656f]"
-            onClick={() => setIsSidebarOpen(false)}
-          >
-            <span className="sr-only">Close sidebar</span>
-            ✕
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-[#54656f] hover:bg-gray-200"
+              onClick={handleLogout}
+              title="Log out"
+            >
+              <LogOut className="h-5 w-5" />
+              <span className="sr-only">Log out</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden text-[#54656f]"
+              onClick={() => setIsSidebarOpen(false)}
+            >
+              <span className="sr-only">Close sidebar</span>
+              ✕
+            </Button>
+          </div>
         </div>
         <div className="space-y-2">
           <ContactList
@@ -231,7 +267,6 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Mobile Sidebar Toggle */}
       <Button
         variant="ghost"
         size="icon"
@@ -244,7 +279,6 @@ export default function ChatPage() {
         <span className="sr-only">Open sidebar</span>
       </Button>
 
-      {/* Chat Area */}
       <div className="flex-1 flex flex-col bg-[#e5ddd5] bg-[url('/whatsapp-bg.png')] bg-repeat">
         <ChatHeader
           contactId={selectedContact}

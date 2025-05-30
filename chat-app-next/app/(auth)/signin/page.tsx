@@ -19,9 +19,13 @@ export default function SignIn() {
   // Redirect if already signed in
   useEffect(() => {
     if (status === 'authenticated') {
+      // Store username in sessionStorage when session is available
+      if (session?.user?.name) {
+        sessionStorage.setItem('username', session.user.name);
+      }
       router.push('/chat');
     }
-  }, [status, router]);
+  }, [status, session, router]);
 
   const handleSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -36,14 +40,14 @@ export default function SignIn() {
     }
 
     try {
-      console.log('Attempting sign-in:', { username }); // Debug log
+      console.log('Attempting sign-in:', { username });
       const result = await signIn('credentials', {
         redirect: false,
-        username: username.toLowerCase(), // Match server-side toLowerCase
+        username: username.toLowerCase(),
         password,
       });
 
-      console.log('Sign-in result:', result); // Debug log
+      console.log('Sign-in result:', result);
 
       if (result?.error) {
         switch (result.error) {
